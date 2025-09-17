@@ -1,0 +1,12 @@
+# 忽略 .env 文件，防止上传私密信息
+.env
+
+testfiles/
+
+__pycache__/
+
+chroma_db_unreal_engine/
+
+.venv/
+
+*.txt
