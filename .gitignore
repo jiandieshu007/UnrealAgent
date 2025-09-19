@@ -5,8 +5,12 @@ testfiles/
 
 __pycache__/
 
-chroma_db_unreal_engine/
 
 .venv/
 
 *.txt
+
+# RAG part
+UnrealEngine/
+ue_blueprint_chroma_db/
+ue_cpp_chroma_db/
