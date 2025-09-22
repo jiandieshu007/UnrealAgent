@@ -84,7 +84,7 @@ good the integrated LLM is at utilizing these tools.
 7. Run setup_unreal_mcp.bat (I probably need to make some fixes to this file as more people try it out)
 8. Currently I've only tested with Claude for Desktop so follow the instructions below to continue
 
-## With Claude for Desktop
+## With Claude for Desktop or cursor-mcp.json
 You will need to find your installation directory for claude for desktop. Find claude_desktop_config.json and add an entry and make it look like so:
 ```json
 {
