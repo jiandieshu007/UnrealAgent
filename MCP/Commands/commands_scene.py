@@ -28,11 +28,28 @@ def register_all(mcp):
             return f"Error getting scene info: {str(e)}"
 
     @mcp.tool()
-    def create_object(ctx: Context, type: str, location: list = None, label: str = None) -> str:
+    def get_asset_info(ctx: Context, type: str = None) -> str:
+        """Get detailed information about the current Unreal project assets.
+        
+        Args:
+            type: The type of asset to get information about ( 'StaticMesh', 'Blueprint', 'Material'.)
+        """
+        try:
+            response = send_command("get_asset_info", {"type": type})
+            if response["status"] == "success":
+                return json.dumps(response["result"], indent=2)
+            else:
+                return f"Error: {response['message']}"
+        except Exception as e:
+            return f"Error getting scene info: {str(e)}"
+
+    @mcp.tool()
+    def create_object(ctx: Context, type: str, name: str = None, location: list = None,label: str = None) -> str:
         """Create a new object in the Unreal scene.
         
         Args:
             type: The type of object to create (e.g., 'StaticMeshActor', 'PointLight', etc.)
+            name: name for the object
             location: Optional 3D location as [x, y, z]
             label: Optional label for the object
         """
@@ -42,6 +59,8 @@ def register_all(mcp):
                 params["location"] = location
             if label:
                 params["label"] = label
+            if name:
+                params["name"] = name
             response = send_command("create_object", params)
             if response["status"] == "success":
                 return f"Created object: {response['result']['name']} with label: {response['result']['label']}"

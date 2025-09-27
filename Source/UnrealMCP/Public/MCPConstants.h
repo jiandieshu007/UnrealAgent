@@ -23,7 +23,8 @@ namespace MCPConstants
     
     // Performance constants
     constexpr int32 MAX_ACTORS_IN_SCENE_INFO = 1000;
-    
+    constexpr int32 MAX_ACTORS_IN_ASSET_INFO = 2000;
+
     // Path constants - use these instead of hardcoded paths
     // These will be initialized at runtime in the module startup
     extern FString ProjectRootPath;         // Root path of the project

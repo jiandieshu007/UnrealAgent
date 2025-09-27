@@ -125,24 +125,24 @@ echo :end
 ) > "%SCRIPT_DIR%\run_unreal_mcp.bat"
 
 REM Update Claude Desktop configuration using Python
-echo.
-echo Updating Claude Desktop configuration...
-python temp_update_config.py "%CLAUDE_CONFIG_FILE%" "%SCRIPT_DIR%\run_unreal_mcp.bat"
-if %ERRORLEVEL% neq 0 (
-    echo ERROR: Failed to update Claude Desktop configuration.
-    goto :end
-)
-echo Claude Desktop configuration updated at: %CLAUDE_CONFIG_FILE%
+@REM echo.
+@REM echo Updating Claude Desktop configuration...
+@REM python temp_update_config.py "%CLAUDE_CONFIG_FILE%" "%SCRIPT_DIR%\run_unreal_mcp.bat"
+@REM if %ERRORLEVEL% neq 0 (
+@REM     echo ERROR: Failed to update Claude Desktop configuration.
+@REM     goto :end
+@REM )
+@REM echo Claude Desktop configuration updated at: %CLAUDE_CONFIG_FILE%
 
 echo.
 echo ========================================================
 echo Setup complete!
-echo.
-echo To use with Claude Desktop:
-echo 1. Run run_unreal_mcp.bat to start the MCP bridge
-echo 2. Open Claude Desktop and it should automatically use the correct configuration
-echo ========================================================
-echo.
+@REM echo.
+@REM echo To use with Claude Desktop:
+@REM echo 1. Run run_unreal_mcp.bat to start the MCP bridge
+@REM echo 2. Open Claude Desktop and it should automatically use the correct configuration
+@REM echo ========================================================
+@REM echo.
 echo Please Press any key to exit...
 pause >nul
 

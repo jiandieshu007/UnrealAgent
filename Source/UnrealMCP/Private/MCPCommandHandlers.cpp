@@ -1,6 +1,7 @@
 #include "MCPCommandHandlers.h"
 
 #include "ActorEditorUtils.h"
+#include "AssetToolsModule.h"
 #include "Editor.h"
 #include "EngineUtils.h"
 #include "MCPFileLogger.h"
@@ -9,10 +10,13 @@
 #include "Misc/Paths.h"
 #include "Misc/Guid.h"
 #include "MCPConstants.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
+#include "Materials/MaterialInstanceConstant.h"
+#include "EditorAssetLibrary.h"   // 用于获取元数据标签
 
 
 //
@@ -77,6 +81,243 @@ TSharedPtr<FJsonObject> FMCPGetSceneInfoHandler::Execute(const TSharedPtr<FJsonO
     return CreateSuccessResponse(Result);
 }
 
+TSharedPtr<FJsonObject> FMCPGetAsasetInfoHandler::Execute(const TSharedPtr<FJsonObject>& Params, FSocket* ClientSocket)
+{
+    const static TMap<FString, FTopLevelAssetPath> SupportedTypes = {
+                         {TEXT("StaticMesh"), FTopLevelAssetPath(TEXT("/Script/Engine"), TEXT("StaticMesh"))},
+                         {TEXT("Blueprint"), FTopLevelAssetPath(TEXT("/Script/Engine"), TEXT("Blueprint"))},
+                         {TEXT("Material"), FTopLevelAssetPath(TEXT("/Script/Engine"), TEXT("Material"))},
+                     };
+                     
+    MCP_LOG_INFO("Handling get_asset_info command");
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    TArray<TSharedPtr<FJsonValue>> ObjectsArray;
+    int32 AssetCount = 0;
+    int32 TotalAssetCount = 0;
+    bool bLimitReached = false;
+
+    FString Type;
+    if (!Params->TryGetStringField(FStringView(TEXT("type")), Type))
+    {
+        MCP_LOG_WARNING("Missing 'type' field in create_object command");
+        return CreateErrorResponse("Missing 'type' field");
+    }
+    
+    // 1. 获取 AssetRegistry 模块
+    FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+    IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+
+    // 2. 确保资产数据已加载（编辑器环境下）
+#if WITH_EDITOR
+    AssetRegistry.SearchAllAssets(true);
+#endif
+    // 创建筛选器
+    FARFilter Filter;
+    FString PathFilter = TEXT("/Script/Engine");
+    // 路径筛选
+    Filter.PackagePaths.Add(FName(*PathFilter));
+    Filter.bRecursivePaths = true;
+
+    if ( Type == "StaticMesh")
+    {
+        // 获取 UStaticMesh 类的路径名并添加到过滤器
+        Filter.ClassPaths.Add(UStaticMesh::StaticClass()->GetClassPathName());
+    }else if ( Type == "Blueprint")
+    {
+        // 获取 UBlueprint 类的路径名并添加到过滤器
+        Filter.ClassPaths.Add(UBlueprint::StaticClass()->GetClassPathName());
+    }else if ( Type == "Material")
+    {
+        // 为了找到所有类型的材质, 我们同时筛选 UMaterial 和 UMaterialInstanceConstant
+        Filter.ClassPaths.Add(UMaterial::StaticClass()->GetClassPathName());
+        Filter.ClassPaths.Add(UMaterialInstanceConstant::StaticClass()->GetClassPathName());
+    }
+    // 3. 获取所有资产数据
+    TArray<FAssetData> AssetDataList;
+    AssetRegistry.GetAssets(Filter, AssetDataList);
+
+    TotalAssetCount = AssetDataList.Num();
+    
+    for (const FAssetData& AssetData : AssetDataList)
+    {
+        UObject* Asset = AssetData.GetAsset();
+        if (!Asset)
+        {
+            continue;
+        }
+
+        // 4. 为每个资产创建 JSON 对象
+        TSharedPtr<FJsonObject> AssetInfo = MakeShareable(new FJsonObject);
+        
+        // 5. 添加基本资产信息
+        AssetInfo->SetStringField("AssetName", AssetData.AssetName.ToString());
+        AssetInfo->SetStringField("ObjectPath", AssetData.GetObjectPathString());
+        AssetInfo->SetStringField("AssetClass", AssetData.AssetClassPath.ToString());
+
+        // b. 资产标签 (非常重要！)
+        TArray<TSharedPtr<FJsonValue>> TagsArray;
+        TMap<FName, FString> Tags = UEditorAssetLibrary::GetMetadataTagValues(Asset);
+        for (const auto& TagPair : Tags)
+        {
+            TagsArray.Add(MakeShared<FJsonValueString>(TagPair.Key.ToString()));
+        }
+        AssetInfo->SetArrayField("tags", TagsArray);
+
+        // c. 根据不同资产类型，添加特定信息
+        if (UStaticMesh* StaticMesh = Cast<UStaticMesh>(Asset))
+        {
+            // 物理尺寸 (边界框)
+            FBox BoundingBox = StaticMesh->GetBoundingBox();
+            TSharedPtr<FJsonObject> BoundingBoxJson = MakeShared<FJsonObject>();
+            BoundingBoxJson->SetStringField("min", BoundingBox.Min.ToString());
+            BoundingBoxJson->SetStringField("max", BoundingBox.Max.ToString());
+            BoundingBoxJson->SetStringField("size", BoundingBox.GetSize().ToString());
+            AssetInfo->SetObjectField("dimensions", BoundingBoxJson);
+            
+            // 材质插槽信息
+            TArray<TSharedPtr<FJsonValue>> MaterialSlotsArray;
+            for (const FStaticMaterial& MaterialSlot : StaticMesh->GetStaticMaterials())
+            {
+                TSharedPtr<FJsonObject> SlotJson = MakeShared<FJsonObject>();
+                SlotJson->SetStringField("slot_name", MaterialSlot.MaterialSlotName.ToString());
+                if (MaterialSlot.MaterialInterface)
+                {
+                    SlotJson->SetStringField("default_material", MaterialSlot.MaterialInterface->GetPathName());
+                }
+                MaterialSlotsArray.Add(MakeShared<FJsonValueObject>(SlotJson));
+            }
+            AssetInfo->SetArrayField("material_slots", MaterialSlotsArray);
+        }
+        
+        // 6. 添加资产到数组
+        ObjectsArray.Add(MakeShareable(new FJsonValueObject(AssetInfo)));
+        AssetCount++;
+        if (AssetCount >= MCPConstants::MAX_ACTORS_IN_ASSET_INFO)
+        {
+            bLimitReached = true;
+            MCP_LOG_WARNING("Actor limit reached (%d). Only returning %d of %d actors.",
+                            MCPConstants::MAX_ACTORS_IN_SCENE_INFO, AssetCount, TotalAssetCount);
+            break; // Limit for performance
+        }
+    }
+
+
+    Result->SetNumberField("returned_asset_count", AssetCount);
+    Result->SetBoolField("limit_reached", bLimitReached);
+    Result->SetArrayField("assets", ObjectsArray);
+
+    MCP_LOG_INFO("Sending get_scene_info response with %d assets", AssetCount);
+    return CreateSuccessResponse(Result);
+}
+
+TSharedPtr<FJsonObject> FMCPImportAssetHandler::Execute(const TSharedPtr<FJsonObject>& Params, FSocket* ClientSocket)
+{
+        // 1. 创建用于返回给 Python 的 JSON 对象
+    TSharedPtr<FJsonObject> ResponseJson = MakeShared<FJsonObject>();
+
+    // 2. 从传入的参数中解析所需信息
+    FString FilePath;
+    if (!Params->TryGetStringField("file_path", FilePath))
+    {
+        ResponseJson->SetStringField("status", "failed");
+        ResponseJson->SetStringField("message", "Missing 'file_path' parameter.");
+        return ResponseJson;
+    }
+
+    // 从文件路径中获取基础名称作为资产名
+    FString AssetName = FPaths::GetBaseFilename(FilePath);
+    
+    const TArray<TSharedPtr<FJsonValue>>* LocationJsonArray;
+    FVector ActorLocation = FVector::ZeroVector;
+    if (Params->TryGetArrayField("location", LocationJsonArray) && LocationJsonArray->Num() == 3)
+    {
+        ActorLocation.X = (*LocationJsonArray)[0]->AsNumber();
+        ActorLocation.Y = (*LocationJsonArray)[1]->AsNumber();
+        ActorLocation.Z = (*LocationJsonArray)[2]->AsNumber();
+    }
+
+    // 定义在内容浏览器中的目标路径
+    const FString DestinationPath = FString::Printf(TEXT("/Game/MCP_Imports/%s"), *AssetName);
+    
+    // --- 3. 核心逻辑：使用 AsyncTask 将导入和生成操作调度到游戏主线程 ---
+    
+    // 我们使用 TPromise 和 TFuture 来等待主线程任务的结果
+    TPromise<FString> ImportPromise;
+    TFuture<FString> ImportFuture = ImportPromise.GetFuture();
+
+    AsyncTask(ENamedThreads::GameThread, [FilePath, DestinationPath, AssetName, ActorLocation, &ImportPromise]()
+    {
+        // 加载 AssetTools 模块
+        FAssetToolsModule& AssetToolsModule = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools");
+        IAssetTools& AssetTools = AssetToolsModule.Get();
+
+        // 配置自动化导入数据
+        UAutomatedAssetImportData* ImportData = NewObject<UAutomatedAssetImportData>();
+        ImportData->DestinationPath = DestinationPath;
+        ImportData->Filenames.Add(FilePath);
+        ImportData->bReplaceExisting = true; // 如果已存在同名资产，则覆盖它
+
+        // 执行导入
+        TArray<UObject*> ImportedAssets = AssetTools.ImportAssetsAutomated(ImportData);
+
+        if (ImportedAssets.Num() > 0 && ImportedAssets[0] != nullptr)
+        {
+            UObject* ImportedAsset = ImportedAssets[0];
+            // 尝试将导入的资产转换为静态网格体
+            UStaticMesh* ImportedMesh = Cast<UStaticMesh>(ImportedAsset);
+
+            if (ImportedMesh && GEditor)
+            {
+                // 获取当前的编辑器世界
+                UWorld* World = GEditor->GetEditorWorldContext().World();
+                if (World)
+                {
+                    // 在指定位置生成一个 StaticMeshActor
+                    FActorSpawnParameters SpawnParams;
+                    SpawnParams.Name = FName(*AssetName);
+                    AStaticMeshActor* NewActor = World->SpawnActor<AStaticMeshActor>(ActorLocation, FRotator::ZeroRotator, SpawnParams);
+                    
+                    if(NewActor)
+                    {
+                        // 将导入的模型赋给这个 Actor
+                        NewActor->GetStaticMeshComponent()->SetStaticMesh(ImportedMesh);
+                        NewActor->SetActorLabel(AssetName); // 设置在场景大纲视图中的显示名称
+                        NewActor->PostEditChange();
+                        
+                        // 任务成功，通过 Promise 返回资产的路径
+                        ImportPromise.SetValue(ImportedAsset->GetPathName());
+                        return;
+                    }
+                }
+            }
+        }
+        
+        // 如果任何一步失败，通过 Promise 返回一个空字符串
+        ImportPromise.SetValue(TEXT(""));
+    });
+
+    // 在当前线程（网络线程）等待主线程任务完成
+    ImportFuture.Wait();
+    FString ResultAssetPath = ImportFuture.Get();
+
+    // 4. 根据主线程的执行结果，构建最终的 JSON 响应
+    if (!ResultAssetPath.IsEmpty())
+    {
+        TSharedPtr<FJsonObject> ResultObject = MakeShared<FJsonObject>();
+        ResultObject->SetStringField("name", ResultAssetPath);
+        
+        ResponseJson->SetStringField("status", "success");
+        ResponseJson->SetObjectField("result", ResultObject);
+    }
+    else
+    {
+        ResponseJson->SetStringField("status", "failed");
+        ResponseJson->SetStringField("message", "Failed to import asset or spawn actor in Unreal Engine. Check logs.");
+    }
+
+    return ResponseJson;
+}
+
 //
 // FMCPCreateObjectHandler
 //
@@ -89,6 +330,13 @@ TSharedPtr<FJsonObject> FMCPCreateObjectHandler::Execute(const TSharedPtr<FJsonO
     {
         MCP_LOG_WARNING("Missing 'type' field in create_object command");
         return CreateErrorResponse("Missing 'type' field");
+    }
+
+    FString Name;
+    if (!Params->TryGetStringField(FStringView(TEXT("name")), Name))
+    {
+        MCP_LOG_WARNING("Missing 'name' field in create_object command");
+        return CreateErrorResponse("Missing 'name' field");
     }
 
     // Get location
@@ -117,11 +365,16 @@ TSharedPtr<FJsonObject> FMCPCreateObjectHandler::Execute(const TSharedPtr<FJsonO
         FString Label;
         Params->TryGetStringField(FStringView(TEXT("label")), Label);
 
+        // Get label if specified
+        FString name;
+        Params->TryGetStringField(FStringView(TEXT("label")), name);
+        
         // Create the actor
         TPair<AStaticMeshActor *, bool> Result = CreateStaticMeshActor(World, Location, MeshPath, Label);
-
+    
         if (Result.Value)
         {
+            // AStaticMeshActor
             TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
             ResultObj->SetStringField("name", Result.Key->GetName());
             ResultObj->SetStringField("label", Result.Key->GetActorLabel());
@@ -158,7 +411,7 @@ TSharedPtr<FJsonObject> FMCPCreateObjectHandler::Execute(const TSharedPtr<FJsonO
     }
 }
 
-TPair<AStaticMeshActor *, bool> FMCPCreateObjectHandler::CreateStaticMeshActor(UWorld *World, const FVector &Location, const FString &MeshPath, const FString &Label)
+TPair<AStaticMeshActor *, bool> FMCPCreateObjectHandler::CreateStaticMeshActor(UWorld *World, const FVector &Location, const FString &MeshPath, const FString &Label, const FString& name)
 {
     if (!World)
     {
@@ -167,7 +420,7 @@ TPair<AStaticMeshActor *, bool> FMCPCreateObjectHandler::CreateStaticMeshActor(U
 
     // Create the actor
     FActorSpawnParameters SpawnParams;
-    SpawnParams.Name = NAME_None; // Auto-generate a name
+    SpawnParams.Name = FName(name); // Auto-generate a name
     SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
 
     AStaticMeshActor *NewActor = World->SpawnActor<AStaticMeshActor>(Location, FRotator::ZeroRotator, SpawnParams);

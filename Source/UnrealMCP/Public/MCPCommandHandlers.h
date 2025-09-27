@@ -85,6 +85,46 @@ public:
 };
 
 /**
+ * Handler for the get_asset_info command
+ */
+class FMCPGetAsasetInfoHandler : public FMCPCommandHandlerBase
+{
+public:
+    FMCPGetAsasetInfoHandler()
+        : FMCPCommandHandlerBase("get_asset_info")
+    {
+    }
+
+    /**
+     * Execute the get_scene_info command
+     * @param Params - The command parameters
+     * @param ClientSocket - The client socket
+     * @return JSON response object
+     */
+    virtual TSharedPtr<FJsonObject> Execute(const TSharedPtr<FJsonObject>& Params, FSocket* ClientSocket) override;
+};
+
+/**
+ * Handler for the import__asset command
+ */
+class FMCPImportAssetHandler : public FMCPCommandHandlerBase
+{
+public:
+    FMCPImportAssetHandler()
+        : FMCPCommandHandlerBase("import__asset")
+    {
+    }
+
+    /**
+     * Execute the get_scene_info command
+     * @param Params - The command parameters
+     * @param ClientSocket - The client socket
+     * @return JSON response object
+     */
+    virtual TSharedPtr<FJsonObject> Execute(const TSharedPtr<FJsonObject>& Params, FSocket* ClientSocket) override;
+};
+
+/**
  * Handler for the create_object command
  */
 class FMCPCreateObjectHandler : public FMCPCommandHandlerBase
@@ -112,7 +152,7 @@ protected:
      * @param Label - Optional custom label for the actor in the outliner
      * @return The created actor and a success flag
      */
-    TPair<AStaticMeshActor*, bool> CreateStaticMeshActor(UWorld* World, const FVector& Location, const FString& MeshPath = "", const FString& Label = "");
+    TPair<AStaticMeshActor*, bool> CreateStaticMeshActor(UWorld* World, const FVector& Location, const FString& MeshPath = "", const FString& Label = "", const FString& name = "");
 
     /**
      * Create a cube actor

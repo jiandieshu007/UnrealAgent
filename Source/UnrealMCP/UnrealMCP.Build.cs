@@ -35,7 +35,7 @@ public class UnrealMCP : ModuleRules
 		PrivateDependencyModuleNames.AddRange(
 			new string[] { 
 				"Json", "JsonUtilities", "Settings", "InputCore", "PythonScriptPlugin",
-				"Kismet", "KismetWidgets"
+				"Kismet", "KismetWidgets", "EditorScriptingUtilities"
 			}
 		);
 		

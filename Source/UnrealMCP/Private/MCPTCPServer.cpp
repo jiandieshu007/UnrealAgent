@@ -35,8 +35,13 @@ FMCPTCPServer::FMCPTCPServer(const FMCPTCPServerConfig& InConfig)
     RegisterCommandHandler(MakeShared<FMCPCreateObjectHandler>());
     RegisterCommandHandler(MakeShared<FMCPModifyObjectHandler>());
     RegisterCommandHandler(MakeShared<FMCPDeleteObjectHandler>());
-    RegisterCommandHandler(MakeShared<FMCPExecutePythonHandler>());
 
+    // ADDED 
+    RegisterCommandHandler(MakeShared<FMCPGetAsasetInfoHandler>());
+    RegisterCommandHandler(MakeShared<FMCPImportAssetHandler>());
+    
+    RegisterCommandHandler(MakeShared<FMCPExecutePythonHandler>());
+    
     // Material command handlers
     RegisterCommandHandler(MakeShared<FMCPCreateMaterialHandler>());
     RegisterCommandHandler(MakeShared<FMCPModifyMaterialHandler>());

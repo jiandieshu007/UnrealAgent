@@ -17,3 +17,10 @@ MCP/Commands/__pycache__/
 **/__pycache__/
 *.py[cod]
 *$py.class
+
+# rag modules
+
+MCP/ue_blueprint_chroma_db
+MCP/ue_cpp_chroma_db
+
+*.env
